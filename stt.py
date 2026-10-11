@@ -5,6 +5,7 @@ import logging
 import wave
 from collections.abc import AsyncIterator
 from typing import Protocol
+
 import sounddevice as sd
 import webrtcvad
 from wyoming.asr import Transcript
@@ -312,6 +313,7 @@ async def main():
             parser.error("--wav cannot be used with --source mic")
         source = client.microphone_source()
     return await client.transcribe(source=source)
+
 
 if __name__ == '__main__':
     asyncio.run(main())

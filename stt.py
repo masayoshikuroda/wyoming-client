@@ -2,7 +2,7 @@ import sys
 import asyncio
 import argparse
 import logging
-import numpy as np
+import wave
 import sounddevice as sd
 import webrtcvad
 from wyoming.asr import Transcript
@@ -38,6 +38,77 @@ class WyomingSTTClient:
         # 16kHz / 16bit(2bytes) / 1ch の場合: 30ms = 480 サンプル = 960 バイト
         self.frame_duration_ms = 30
         self.frame_bytes = int(self.rate * (self.frame_duration_ms / 1000.0) * 2)
+
+    async def transcribe_wav(self, wav_path: str) -> str:
+        """self.rate に一致する WAV ファイルを STT サーバーへ送信する"""
+        with wave.open(wav_path, "rb") as wav_file:
+            if wav_file.getcomptype() != "NONE":
+                raise ValueError("WAV file must use uncompressed PCM.")
+
+            rate = wav_file.getframerate()
+            if rate != self.rate:
+                raise ValueError(f"WAV sample rate must be {self.rate} Hz, got {rate} Hz.")
+
+            channels = wav_file.getnchannels()
+            if channels != self.channels:
+                raise ValueError(f"WAV file must be mono, got {channels} channels.")
+
+            width = wav_file.getsampwidth()
+            if width != 2:
+                raise ValueError(f"WAV sample width must be 2 bytes, got {width} bytes.")
+
+            frame_count = wav_file.getnframes()
+            if rate <= 0 or channels <= 0 or frame_count <= 0:
+                raise ValueError("WAV file must contain valid audio data.")
+
+            audio_data = wav_file.readframes(frame_count)
+            transcript_text = ""
+            chunk_bytes = int(self.rate * self.frame_duration_ms / 1000) * channels * width
+            async with AsyncTcpClient(self.host, self.port) as client:
+                logger.info(f"[{self.host}:{self.port}] Wyoming STT サーバーに接続しました。")
+                logger.info(
+                    f"WAV 送信開始: {wav_path} "
+                    f"(Rate={rate}Hz, "
+                    f"Channels={channels}, Width={width}bytes)"
+                )
+                await client.write_event(
+                    AudioStart(rate=self.rate, width=2, channels=channels).event()
+                )
+
+                try:
+                    loop = asyncio.get_running_loop()
+                    start_time = loop.time()
+                    sent_frames = 0
+                    for offset in range(0, len(audio_data), chunk_bytes):
+                        chunk = audio_data[offset : offset + chunk_bytes]
+                        await client.write_event(
+                            AudioChunk(
+                                rate=self.rate,
+                                width=width,
+                                channels=channels,
+                                audio=chunk,
+                            ).event()
+                        )
+                        sent_frames += len(chunk) // (channels * width)
+                        delay = start_time + sent_frames / self.rate - loop.time()
+                        if delay > 0:
+                            await asyncio.sleep(delay)
+                finally:
+                    await client.write_event(AudioStop().event())
+
+                logger.info("STT 認識結果を待っています...")
+                while True:
+                    event = await client.read_event()
+                    if event is None:
+                        break
+
+                    if Transcript.is_type(event.type):
+                        transcript = Transcript.from_event(event)
+                        transcript_text = transcript.text
+                        logger.info(f"認識結果: {transcript_text}")
+                        break
+
+            return transcript_text
 
     async def transcribe(self, timeout: float = 10.0) -> str:
         """マイク入力を監視し、発話開始〜終了（無音検出）を自動判定して STT 認識結果を返す"""
@@ -186,9 +257,12 @@ async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", type=str, default='localhost')
     parser.add_argument("--port", type=int, default=10300)
+    parser.add_argument("--wav", type=str)
     args = parser.parse_args()
 
     client = WyomingSTTClient(args.host, args.port)
+    if args.wav:
+        return await client.transcribe_wav(args.wav)
     return await client.transcribe()
 
 if __name__ == '__main__':

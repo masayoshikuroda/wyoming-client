@@ -1,0 +1,22 @@
+[project]
+name = "wyoming-client"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "masayoshikuroda", email = "kuroda.masayoshi@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "aioconsole>=0.8.2",
+    "numpy>=2.5.3",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "sounddevice>=0.5.6",
+    "webrtcvad-wheels>=2.0.14",
+    "websockets>=17.1",
+    "wyoming>=1.10.2",
+]
+
+[tool.uv]
+package = false

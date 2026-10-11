@@ -85,11 +85,12 @@ python tts.py --host localhost --port 10200 --text "こんにちは、私はWyom
 python stt.py --host localhost --port 10300
 ```
 
-マイク入力を待ち、発話開始後に無音が一定時間続くと認識結果を返します。
-WAV ファイルを送信する場合は `--wav` を指定します。非圧縮 PCM 形式かつ 16kHz の WAV に対応しています。16kHz 以外の WAV を指定するとエラーになります。
+デフォルトではマイク入力を待ち、発話開始後に無音が一定時間続くと認識結果を返します。音声ソースは `WyomingSTTClient.transcribe(source=...)` に `AudioSource` を渡して切り替えられます。標準の `MicrophoneAudioSource` と `WavAudioSource` は `stt.py` で利用できます。
+
+WAV ファイルを送信する場合は `--source wav --wav` を指定します。従来どおり `--wav` のみでも WAV 入力として動作します。非圧縮 PCM 形式かつクライアント設定と同じサンプルレート・チャンネル数・16-bit 幅の WAV に対応しています。
 
 ```bash
-python stt.py --host localhost --port 10300 --wav test.wav
+python stt.py --host localhost --port 10300 --source wav --wav test.wav
 ```
 
 #### WWD

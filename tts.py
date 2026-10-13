@@ -72,15 +72,17 @@ class WyomingTTSClient:
             logger.info(f"[{self.host}:{self.port}] Wyoming TTS サーバーに接続しました。")
 
             # 音声合成リクエスト送信
-            await client.write_event(Synthesize(text=text).event())
             logger.info(f"音声合成リクエスト: {text}")
+            await client.write_event(Synthesize(text=text).event())
+            logger.debug("sent: synthesize")
 
             while True:
                 event = await client.read_event()
                 if event is None:
                     logger.info("サーバーから切断されました。")
                     break
-                
+
+                logger.debug("recv: " + event.type)
                 if event.type == "audio-start":
                     logger.info(f"音声受信開始")
                 elif event.type == "audio-chunk":
@@ -120,18 +122,18 @@ class WyomingTTSClient:
             self._stream = None
 
 async def main():
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(levelname)s:%(name)s: %(message)s",
-        handlers=[logging.StreamHandler(sys.stdout)],
-        force=True,
-    )
-
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", type=str, default='localhost')
     parser.add_argument("--port", type=int, default=10200)
     parser.add_argument("--text", type=str, default='こんにちは、私はWyomingクライアントです。')
+    parser.add_argument("--debug", action='store_true')
     args = parser.parse_args()
+
+    logging.basicConfig(
+        level=logging.DEBUG if args.debug else logging.INFO,
+        format="%(levelname)s:%(name)s: %(message)s",
+        handlers=[logging.StreamHandler(sys.stdout)]
+    )
 
     client = WyomingTTSClient(args.host, args.port)
     await client.speak(args.text)

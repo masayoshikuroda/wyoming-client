@@ -58,32 +58,20 @@ class WyomingWWDClient:
             # 1. 検出開始リクエスト (Detect) の送信 ★ここを追加★
             # サーバーに対して検知対象のモデル名を伝える (空リストの場合はサーバー既定の全モデル)
             await client.write_event(Detect(names=self.wake_words).event())
+            logger.debug("sent: detect")
 
             # 2. 音声ストリーム開始イベント (AudioStart) の送信
-            await client.write_event(
-                AudioStart(
-                    rate=self.rate,
-                    width=2,
-                    channels=self.channels,
-                ).event()
-            )
+            await client.write_event(AudioStart(rate=self.rate, width=2, channels=self.channels).event())
+            logger.debug("sent: audio-start")
 
             self._is_listening = True
 
             async def send_audio():
                 while self._is_listening:
                     try:
-                        pcm_bytes = await asyncio.wait_for(
-                            audio_queue.get(), timeout=0.1
-                        )
-                        await client.write_event(
-                            AudioChunk(
-                                rate=self.rate,
-                                width=2,
-                                channels=self.channels,
-                                audio=pcm_bytes,
-                            ).event()
-                        )
+                        pcm_bytes = await asyncio.wait_for(audio_queue.get(), timeout=0.1)
+                        await client.write_event(AudioChunk(rate=self.rate, width=2, channels=self.channels, audio=pcm_bytes).event())
+                        logger.debug("sent: audio-chunk")
                     except asyncio.TimeoutError:
                         continue
 
@@ -99,9 +87,7 @@ class WyomingWWDClient:
                         break
 
                     try:
-                        event = await asyncio.wait_for(
-                            client.read_event(), timeout=0.1
-                        )
+                        event = await asyncio.wait_for(client.read_event(), timeout=0.1)
                     except asyncio.TimeoutError:
                         continue
 
@@ -110,6 +96,7 @@ class WyomingWWDClient:
                         break
 
                     # 3. サーバーからの detection イベント検知
+                    logger.debug("recv: " + event.type)
                     if event.type == "detection":
                         data = event.data or {}
                         detected_name = data.get("name", "unknown")
@@ -120,24 +107,25 @@ class WyomingWWDClient:
             self._is_listening = False
             await send_task
             await client.write_event(AudioStop().event())
-
+            logger.debug("sent: audio-stop")
         return detected_name
 
 async def main():
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(levelname)s:%(name)s: %(message)s",
-        handlers=[logging.StreamHandler(sys.stdout)],
-        force=True,
-    )
-    
     parser = argparse.ArgumentParser()
-    parser.add_argument("--host", type=str, default='localhost')
-    parser.add_argument("--port", type=int, default=10300)
+    parser.add_argument("--host",    type=str,   default='localhost')
+    parser.add_argument("--port",    type=int,   default=10300)
+    parser.add_argument("--timeout", type=float, default=5.0)
+    parser.add_argument("--debug", action='store_true')
     args = parser.parse_args()
 
+    logging.basicConfig(
+        level=logging.DEBUG if args.debug else logging.INFO,
+        format="%(levelname)s:%(name)s: %(message)s",
+        handlers=[logging.StreamHandler(sys.stdout)]
+    )
+
     client = WyomingWWDClient(args.host, args.port)
-    return await client.detect(timeout=5.0)
+    return await client.detect(timeout=args.timeout)
 
 if __name__ == '__main__':
     asyncio.run(main())

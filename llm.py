@@ -24,6 +24,7 @@ class WyomingLLMClient:
             # 1. 直接 Transcript (テキスト) イベントを送信
             logger.info(f"送信メッセージ: '{text}'")
             await client.write_event(Transcript(text=text).event())
+            logger.debug("sent: transcript")
 
             # 2. レスポンスの受信ループ
             start_time = asyncio.get_event_loop().time()
@@ -38,6 +39,7 @@ class WyomingLLMClient:
                     logger.error("サーバーから切断されました。")
                     break
 
+                logger.debug("recv: " + event.type)
                 logger.debug(f"受信イベント型: {event.type}")
                 data = event.data or {}
 
@@ -75,18 +77,18 @@ class WyomingLLMClient:
         return response_text
 
 async def main():
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(levelname)s:%(name)s: %(message)s",
-        handlers=[logging.StreamHandler(sys.stdout)],
-        force=True,
-    )
-
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", type=str, default='localhost')
     parser.add_argument("--port", type=int, default=10200)
     parser.add_argument("--text", type=str, default='こんばんは、月がきれいですね。')
+    parser.add_argument("--debug", action='store_true')
     args = parser.parse_args()
+
+    logging.basicConfig(
+        level=logging.DEBUG if args.debug else logging.INFO,
+        format="%(levelname)s:%(name)s: %(message)s",
+        handlers=[logging.StreamHandler(sys.stdout)]
+    )
 
     client = WyomingLLMClient(args.host, args.port)
     return await client.chat(args.text)

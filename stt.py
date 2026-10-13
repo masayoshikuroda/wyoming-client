@@ -8,7 +8,7 @@ from typing import Protocol
 
 import sounddevice as sd
 import webrtcvad
-from wyoming.asr import Transcript
+from wyoming.asr import Transcript, Transcribe
 from wyoming.audio import AudioChunk, AudioStart, AudioStop
 from wyoming.client import AsyncTcpClient
 
@@ -201,9 +201,7 @@ class WyomingSTTClient:
         # webrtcvad は 10ms, 20ms, または 30ms のフレーム単位のみ対応
         # 16kHz / 16bit(2bytes) / 1ch の場合: 30ms = 480 サンプル = 960 バイト
         self.frame_duration_ms = 30
-        self.frame_bytes = int(
-            self.rate * (self.frame_duration_ms / 1000.0) * self.channels * 2
-        )
+        self.frame_bytes = int(self.rate * (self.frame_duration_ms / 1000.0) * self.channels * 2)
 
     def microphone_source(self) -> MicrophoneAudioSource:
         """クライアント設定に合ったマイク音声ソースを生成する。"""
@@ -228,11 +226,7 @@ class WyomingSTTClient:
         """WAV 音声ソースを使って音声認識結果を返す。"""
         return await self.transcribe(source=self.wav_source(wav_path))
 
-    async def transcribe(
-        self,
-        timeout: float = 10.0,
-        source: AudioSource | None = None,
-    ) -> str:
+    async def transcribe(self, timeout: float = 10.0, source: AudioSource | None = None) -> str:
         """音声ソースから音声を送り、Wyoming STT の認識結果を返す。"""
         if source is None:
             source = self.microphone_source()
@@ -250,34 +244,26 @@ class WyomingSTTClient:
                     f"Width={source.width}bytes)"
                 )
 
-            await client.write_event(
-                AudioStart(
-                    rate=source.rate,
-                    width=source.width,
-                    channels=source.channels,
-                ).event()
-            )
+            await client.write_event(AudioStart(rate=source.rate, width=source.width, channels=source.channels).event())
+            logger.debug("sent: audio-start")
             try:
                 async for chunk in source.stream(timeout):
                     sent_audio = True
-                    await client.write_event(
-                        AudioChunk(
-                            rate=source.rate,
-                            width=source.width,
-                            channels=source.channels,
-                            audio=chunk,
-                        ).event()
-                    )
+                    await client.write_event(AudioChunk(rate=source.rate, width=source.width, channels=source.channels, audio=chunk).event())
+                    logger.debug("sent: audio-chunk")
             finally:
                 await client.write_event(AudioStop().event())
+                logger.debug("sent: audio-stop")
 
             if sent_audio:
                 logger.info("STT 認識結果を待っています...")
                 while True:
                     event = await client.read_event()
                     if event is None:
+                        logger.info("サーバーから切断されました。")
                         break
 
+                    logger.debug("recv: " + event.type)
                     if Transcript.is_type(event.type):
                         transcript = Transcript.from_event(event)
                         transcript_text = transcript.text
@@ -288,19 +274,19 @@ class WyomingSTTClient:
 
 
 async def main():
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(levelname)s:%(name)s: %(message)s",
-        handlers=[logging.StreamHandler(sys.stdout)],
-        force=True,
-    )
-
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", type=str, default='localhost')
     parser.add_argument("--port", type=int, default=10300)
     parser.add_argument("--wav", type=str)
     parser.add_argument("--source", choices=("mic", "wav"))
+    parser.add_argument("--debug", action='store_true')
     args = parser.parse_args()
+
+    logging.basicConfig(
+        level=logging.DEBUG if args.debug else logging.INFO,
+        format="%(levelname)s:%(name)s: %(message)s",
+        handlers=[logging.StreamHandler(sys.stdout)]
+    )
 
     client = WyomingSTTClient(args.host, args.port)
     source_type = args.source or ("wav" if args.wav else "mic")
